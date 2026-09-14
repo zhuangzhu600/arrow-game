@@ -40,12 +40,16 @@ current_level = 0
 selected_arrow = None
 hit_arrow = None
 hit_timer = 0
+result_message = ""       # 结果界面的文字（“失败”或“通关”）
 
-# 新增：飞行中的箭头状态
-flying_arrow = None       # 正在飞出的箭头对象
-flying_x = 0              # 飞行时的当前 x 坐标
-flying_y = 0              # 飞行时的当前 y 坐标
-flying_speed = 12         # 每帧移动的像素数
+# 新增：失误次数
+mistakes_left = MAX_MISTAKES
+
+# 飞行中的箭头状态
+flying_arrow = None
+flying_x = 0
+flying_y = 0
+flying_speed = 12
 
 start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 350, 200, 60)
 
@@ -127,15 +131,18 @@ def draw_start_screen():
 def draw_playing_screen():
     screen.fill(BG_COLOR)
 
+    # 左上角：关卡信息 + 失误次数
     info = FONT_SMALL.render(f"第 {current_level + 1} 关", True, TEXT_COLOR)
     screen.blit(info, (20, 20))
+
+    mistakes_text = FONT_SMALL.render(f"剩余失误: {mistakes_left}", True, TEXT_COLOR)
+    screen.blit(mistakes_text, (20, 50))
 
     draw_board()
 
     for arrow in LEVELS[current_level]:
         if arrow.alive:
             if arrow is flying_arrow:
-                # 正在飞行的箭头，画在动画坐标上
                 draw_arrow(flying_x, flying_y, arrow.direction, ARROW_COLOR)
             else:
                 cx, cy = cell_center(arrow.row, arrow.col)
@@ -152,7 +159,7 @@ def draw_playing_screen():
 
 def draw_result_screen():
     screen.fill(BG_COLOR)
-    tip = FONT_MID.render("结果界面（待开发）", True, TEXT_COLOR)
+    tip = FONT_MID.render(result_message, True, TEXT_COLOR)
     screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 20))
 
 
@@ -176,7 +183,6 @@ while running:
                     state = STATE_PLAYING
 
             elif state == STATE_PLAYING:
-                # 如果有箭头正在飞，暂时不让点别的，等它飞完
                 if flying_arrow is None:
                     cell = pos_to_cell(event.pos)
                     if cell:
@@ -185,24 +191,27 @@ while running:
                         if arrow:
                             selected_arrow = arrow
                             if can_fly_out(arrow, LEVELS[current_level]):
-                                # 可以飞出：进入飞行状态
                                 flying_arrow = arrow
                                 flying_x, flying_y = cell_center(arrow.row, arrow.col)
                                 selected_arrow = None
                             else:
-                                # 被挡住，闪红
+                                # 关键修改：被挡住，失误次数减 1
                                 hit_arrow = arrow
                                 hit_timer = 20
+                                mistakes_left -= 1
+                                # 如果失误耗尽，进入失败状态
+                                if mistakes_left <= 0:
+                                    state = STATE_RESULT
+                                    result_message = "游戏失败！按 ESC 返回"
+                                    selected_arrow = None
                         else:
                             selected_arrow = None
 
-    # 更新飞行箭头的位置
     if flying_arrow is not None:
         dr, dc = flying_arrow.direction
         flying_x += dc * flying_speed
         flying_y += dr * flying_speed
 
-        # 检查是否已经飞出棋盘很远，如果飞出去了，就真正移除
         if (flying_x < BOARD_LEFT - CELL_SIZE or
             flying_x > BOARD_LEFT + COLS * CELL_SIZE + CELL_SIZE or
             flying_y < BOARD_TOP - CELL_SIZE or
