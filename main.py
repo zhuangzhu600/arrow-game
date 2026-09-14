@@ -17,13 +17,14 @@ BTN_COLOR = (100, 160, 220)
 BTN_HOVER = (70, 130, 200)
 GRID_COLOR = (200, 200, 200)
 ARROW_COLOR = (60, 90, 140)
+ARROW_SELECTED = (230, 120, 60)   # 选中时的颜色（橙色）
 
 # 字体
 FONT_BIG = pygame.font.SysFont("simhei", 48)
 FONT_MID = pygame.font.SysFont("simhei", 28)
 FONT_SMALL = pygame.font.SysFont("simhei", 22)
 
-# 棋盘布局参数
+# 棋盘布局
 CELL_SIZE = 90
 BOARD_LEFT = (WIDTH - COLS * CELL_SIZE) // 2
 BOARD_TOP = 100
@@ -34,22 +35,39 @@ STATE_PLAYING = "playing"
 STATE_RESULT = "result"
 state = STATE_START
 
-# 当前关卡索引
 current_level = 0
+selected_arrow = None   # 当前被选中的箭头对象，没有就是 None
 
-# 开始按钮
 start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 350, 200, 60)
 
 
 def cell_center(row, col):
-    """返回某行某列格子的中心坐标"""
     x = BOARD_LEFT + col * CELL_SIZE + CELL_SIZE // 2
     y = BOARD_TOP + row * CELL_SIZE + CELL_SIZE // 2
     return x, y
 
 
+def pos_to_cell(pos):
+    """把鼠标坐标转换成 (row, col)，如果不在棋盘上返回 None"""
+    x, y = pos
+    if x < BOARD_LEFT or x >= BOARD_LEFT + COLS * CELL_SIZE:
+        return None
+    if y < BOARD_TOP or y >= BOARD_TOP + ROWS * CELL_SIZE:
+        return None
+    col = (x - BOARD_LEFT) // CELL_SIZE
+    row = (y - BOARD_TOP) // CELL_SIZE
+    return int(row), int(col)
+
+
+def find_arrow_at(row, col):
+    """在指定格子里找还活着的箭头"""
+    for arrow in LEVELS[current_level]:
+        if arrow.alive and arrow.row == row and arrow.col == col:
+            return arrow
+    return None
+
+
 def draw_arrow(cx, cy, direction, color):
-    """在(cx, cy)处画一个指定方向的三角形箭头"""
     size = 44
     if direction == RIGHT:
         pts = [(cx + size // 2, cy),
@@ -73,7 +91,6 @@ def draw_arrow(cx, cy, direction, color):
 
 
 def draw_board():
-    """画棋盘网格"""
     for r in range(ROWS + 1):
         y = BOARD_TOP + r * CELL_SIZE
         pygame.draw.line(screen, GRID_COLOR,
@@ -103,18 +120,19 @@ def draw_start_screen():
 def draw_playing_screen():
     screen.fill(BG_COLOR)
 
-    # 左上角显示当前关卡
     info = FONT_SMALL.render(f"第 {current_level + 1} 关", True, TEXT_COLOR)
     screen.blit(info, (20, 20))
 
-    # 画棋盘
     draw_board()
 
-    # 画当前关卡里所有还没飞走的箭头
     for arrow in LEVELS[current_level]:
         if arrow.alive:
             cx, cy = cell_center(arrow.row, arrow.col)
-            draw_arrow(cx, cy, arrow.direction, ARROW_COLOR)
+            # 如果这个箭头被选中，用高亮色画
+            if arrow is selected_arrow:
+                draw_arrow(cx, cy, arrow.direction, ARROW_SELECTED)
+            else:
+                draw_arrow(cx, cy, arrow.direction, ARROW_COLOR)
 
     back = FONT_SMALL.render("按 ESC 返回开始界面", True, (120, 120, 120))
     screen.blit(back, (WIDTH // 2 - back.get_width() // 2, HEIGHT - 40))
@@ -135,11 +153,22 @@ while running:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE and state == STATE_PLAYING:
                 state = STATE_START
+                selected_arrow = None
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if state == STATE_START:
                 if start_btn_rect.collidepoint(event.pos):
                     state = STATE_PLAYING
+
+            elif state == STATE_PLAYING:
+                cell = pos_to_cell(event.pos)
+                if cell:
+                    row, col = cell
+                    arrow = find_arrow_at(row, col)
+                    if arrow:
+                        selected_arrow = arrow
+                    else:
+                        selected_arrow = None
 
     if state == STATE_START:
         draw_start_screen()
