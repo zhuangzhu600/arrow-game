@@ -19,6 +19,8 @@ GRID_COLOR = (200, 200, 200)
 ARROW_COLOR = (60, 90, 140)
 ARROW_SELECTED = (230, 120, 60)
 ARROW_HIT = (220, 60, 60)
+CELL_BG_COLOR = (225, 235, 245)   # 格子背景色（淡蓝色）
+ARROW_SHADOW = (200, 200, 200)    # 箭头阴影色
 
 # 字体
 FONT_BIG = pygame.font.SysFont("simhei", 48)
@@ -82,40 +84,50 @@ def find_arrow_at(row, col):
     return None
 
 
-def draw_arrow(cx, cy, direction, color):
-    size = 44
-    if direction == RIGHT:
-        pts = [(cx + size // 2, cy),
-               (cx - size // 2, cy - size // 2),
-               (cx - size // 2, cy + size // 2)]
-    elif direction == LEFT:
-        pts = [(cx - size // 2, cy),
-               (cx + size // 2, cy - size // 2),
-               (cx + size // 2, cy + size // 2)]
-    elif direction == UP:
-        pts = [(cx, cy - size // 2),
-               (cx - size // 2, cy + size // 2),
-               (cx + size // 2, cy + size // 2)]
-    elif direction == DOWN:
-        pts = [(cx, cy + size // 2),
-               (cx - size // 2, cy - size // 2),
-               (cx + size // 2, cy - size // 2)]
-    else:
-        return
-    pygame.draw.polygon(screen, color, pts)
-
-
 def draw_board():
-    for r in range(ROWS + 1):
-        y = BOARD_TOP + r * CELL_SIZE
-        pygame.draw.line(screen, GRID_COLOR,
-                         (BOARD_LEFT, y),
-                         (BOARD_LEFT + COLS * CELL_SIZE, y), 2)
-    for c in range(COLS + 1):
-        x = BOARD_LEFT + c * CELL_SIZE
-        pygame.draw.line(screen, GRID_COLOR,
-                         (x, BOARD_TOP),
-                         (x, BOARD_TOP + ROWS * CELL_SIZE), 2)
+    # 不再画灰色线条，改成画一个个浅蓝色的圆角方块
+    for r in range(ROWS):
+        for c in range(COLS):
+            x = BOARD_LEFT + c * CELL_SIZE
+            y = BOARD_TOP + r * CELL_SIZE
+            rect = pygame.Rect(x + 4, y + 4, CELL_SIZE - 8, CELL_SIZE - 8)
+            pygame.draw.rect(screen, CELL_BG_COLOR, rect, border_radius=10)
+
+
+
+
+def draw_arrow(cx, cy, direction, color):
+    size = 40  # 稍微缩小一点，看起来更精致
+
+    def get_pts(offset_x, offset_y):
+        """根据偏移量算出三角形三个顶点的坐标，统一处理阴影和本体"""
+        if direction == RIGHT:
+            return [(cx + size // 2 + offset_x, cy + offset_y),
+                    (cx - size // 2 + offset_x, cy - size // 2 + offset_y),
+                    (cx - size // 2 + offset_x, cy + size // 2 + offset_y)]
+        elif direction == LEFT:
+            return [(cx - size // 2 + offset_x, cy + offset_y),
+                    (cx + size // 2 + offset_x, cy - size // 2 + offset_y),
+                    (cx + size // 2 + offset_x, cy + size // 2 + offset_y)]
+        elif direction == UP:
+            return [(cx + offset_x, cy - size // 2 + offset_y),
+                    (cx - size // 2 + offset_x, cy + size // 2 + offset_y),
+                    (cx + size // 2 + offset_x, cy + size // 2 + offset_y)]
+        elif direction == DOWN:
+            return [(cx + offset_x, cy + size // 2 + offset_y),
+                    (cx - size // 2 + offset_x, cy - size // 2 + offset_y),
+                    (cx + size // 2 + offset_x, cy - size // 2 + offset_y)]
+        return []
+
+    # 画阴影（向右下偏移 3 像素）
+    shadow_pts = get_pts(3, 3)
+    if shadow_pts:
+        pygame.draw.polygon(screen, ARROW_SHADOW, shadow_pts)
+
+    # 画箭头本体
+    pts = get_pts(0, 0)
+    if pts:
+        pygame.draw.polygon(screen, color, pts)
 
 
 def draw_start_screen():
