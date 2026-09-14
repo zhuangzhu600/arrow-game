@@ -53,13 +53,18 @@ flying_x = 0
 flying_y = 0
 flying_speed = 12
 
-# 新增：操作历史记录（撤销用）
+# 新增：计时和星级相关
+level_start_time = 0      # 当前关卡开始的时间
+elapsed_time = 0.0        # 当前关卡已经用了多少秒
+stars_earned = 0          # 通关时获得的星级（1~3）
+
+# 操作历史记录（撤销用）
 history = []
 
 # 按钮区域
 start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 350, 200, 60)
-restart_btn_rect = pygame.Rect(20, HEIGHT - 60, 120, 40)  # 重新开始
-undo_btn_rect = pygame.Rect(WIDTH - 140, HEIGHT - 60, 120, 40)  # 撤销
+restart_btn_rect = pygame.Rect(20, HEIGHT - 60, 120, 40)
+undo_btn_rect = pygame.Rect(WIDTH - 140, HEIGHT - 60, 120, 40)
 result_restart_btn = pygame.Rect(WIDTH // 2 - 120, HEIGHT // 2 + 40, 100, 50)
 result_next_btn = pygame.Rect(WIDTH // 2 + 20, HEIGHT // 2 + 40, 100, 50)
 
@@ -145,7 +150,6 @@ def draw_start_screen():
 def draw_playing_screen():
     screen.fill(BG_COLOR)
 
-    # 左上角：关卡信息 + 失误次数 + 剩余箭头
     info = FONT_SMALL.render(f"第 {current_level + 1} 关", True, TEXT_COLOR)
     screen.blit(info, (20, 20))
 
@@ -156,9 +160,12 @@ def draw_playing_screen():
     for arrow in LEVELS[current_level]:
         if arrow.alive:
             arrows_left += 1
-
     arrows_text = FONT_SMALL.render(f"剩余箭头: {arrows_left}", True, TEXT_COLOR)
     screen.blit(arrows_text, (20, 80))
+
+    # 新增：显示当前已用时
+    time_text = FONT_SMALL.render(f"用时: {elapsed_time:.1f} 秒", True, TEXT_COLOR)
+    screen.blit(time_text, (WIDTH - 180, 20))
 
     draw_board()
 
@@ -177,16 +184,13 @@ def draw_playing_screen():
 
     mouse_pos = pygame.mouse.get_pos()
 
-    # 画重新开始按钮
     btn_color = BTN_HOVER if restart_btn_rect.collidepoint(mouse_pos) else BTN_COLOR
     pygame.draw.rect(screen, btn_color, restart_btn_rect, border_radius=5)
     restart_text = FONT_SMALL.render("重新开始", True, (255, 255, 255))
     screen.blit(restart_text, (restart_btn_rect.centerx - restart_text.get_width() // 2,
                                restart_btn_rect.centery - restart_text.get_height() // 2))
 
-    # 画撤销按钮
     undo_color = BTN_HOVER if undo_btn_rect.collidepoint(mouse_pos) else BTN_COLOR
-    # 如果正在飞或者没历史记录，撤销按钮画灰一点
     if flying_arrow is not None or not history:
         undo_color = (180, 180, 180)
     pygame.draw.rect(screen, undo_color, undo_btn_rect, border_radius=5)
@@ -200,8 +204,18 @@ def draw_playing_screen():
 
 def draw_result_screen():
     screen.fill(BG_COLOR)
-    tip = FONT_MID.render(result_message, True, TEXT_COLOR)
-    screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 60))
+
+    if result_message == "通关！":
+        # 显示通关、时间和星级
+        tip = FONT_MID.render(f"通关！用时 {elapsed_time:.1f} 秒", True, TEXT_COLOR)
+        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 100))
+
+        star_str = "★" * stars_earned + "☆" * (3 - stars_earned)
+        star_text = FONT_BIG.render(star_str, True, (240, 180, 50))
+        screen.blit(star_text, (WIDTH // 2 - star_text.get_width() // 2, HEIGHT // 2 - 50))
+    else:
+        tip = FONT_MID.render("游戏失败！", True, TEXT_COLOR)
+        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 60))
 
     mouse_pos = pygame.mouse.get_pos()
 
@@ -219,14 +233,28 @@ def draw_result_screen():
                                 result_next_btn.centery - next_text.get_height() // 2))
 
 
+def calculate_stars(time_used, mistakes_used):
+    """根据时间和失误次数算星级，返回 1~3"""
+    if time_used <= 20 and mistakes_used == 0:
+        return 3
+    elif time_used <= 40 and mistakes_used <= 1:
+        return 2
+    else:
+        return 1
+
+
 def reset_level():
     global mistakes_left, selected_arrow, hit_arrow, hit_timer, flying_arrow, history
+    global level_start_time, elapsed_time, stars_earned
     mistakes_left = MAX_MISTAKES
     selected_arrow = None
     hit_arrow = None
     hit_timer = 0
     flying_arrow = None
-    history = []  # 清空历史记录
+    history = []
+    elapsed_time = 0.0
+    stars_earned = 0
+    level_start_time = pygame.time.get_ticks()  # 重置起始时间
     for arrow in LEVELS[current_level]:
         arrow.alive = True
 
@@ -259,10 +287,8 @@ while running:
                     reset_level()
 
             elif state == STATE_PLAYING:
-                # 先判断是否点了重新开始
                 if restart_btn_rect.collidepoint(event.pos):
                     reset_level()
-                # 判断是否点了撤销
                 elif undo_btn_rect.collidepoint(event.pos):
                     if flying_arrow is None and history:
                         action_type, arrow = history.pop()
@@ -281,13 +307,11 @@ while running:
                                 flying_arrow = arrow
                                 flying_x, flying_y = cell_center(arrow.row, arrow.col)
                                 selected_arrow = None
-                                # 记录历史：飞出的箭头
                                 history.append(('fly', arrow))
                             else:
                                 hit_arrow = arrow
                                 hit_timer = 20
                                 mistakes_left -= 1
-                                # 记录历史：点错了
                                 history.append(('hit', None))
                                 if mistakes_left <= 0:
                                     state = STATE_RESULT
@@ -306,6 +330,10 @@ while running:
                         current_level = 0
                     reset_level()
                     state = STATE_PLAYING
+
+    # 更新游戏内计时
+    if state == STATE_PLAYING:
+        elapsed_time = (pygame.time.get_ticks() - level_start_time) / 1000.0
 
     if flying_arrow is not None:
         dr, dc = flying_arrow.direction
@@ -328,6 +356,9 @@ while running:
         if all_dead and flying_arrow is None:
             state = STATE_RESULT
             result_message = "通关！"
+            # 计算星级（用失误次数反推：初始 MAX_MISTAKES - 剩余）
+            used_mistakes = MAX_MISTAKES - mistakes_left
+            stars_earned = calculate_stars(elapsed_time, used_mistakes)
 
     if state == STATE_START:
         draw_start_screen()
