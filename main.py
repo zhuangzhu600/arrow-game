@@ -17,7 +17,8 @@ BTN_COLOR = (100, 160, 220)
 BTN_HOVER = (70, 130, 200)
 GRID_COLOR = (200, 200, 200)
 ARROW_COLOR = (60, 90, 140)
-ARROW_SELECTED = (230, 120, 60)   # 选中时的颜色（橙色）
+ARROW_SELECTED = (230, 120, 60)
+ARROW_HIT = (220, 60, 60)   # 碰撞反馈用的红色
 
 # 字体
 FONT_BIG = pygame.font.SysFont("simhei", 48)
@@ -36,7 +37,9 @@ STATE_RESULT = "result"
 state = STATE_START
 
 current_level = 0
-selected_arrow = None   # 当前被选中的箭头对象，没有就是 None
+selected_arrow = None
+hit_arrow = None       # 刚碰撞的箭头，用来闪红
+hit_timer = 0          # 红色还要闪多少帧
 
 start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 350, 200, 60)
 
@@ -48,7 +51,6 @@ def cell_center(row, col):
 
 
 def pos_to_cell(pos):
-    """把鼠标坐标转换成 (row, col)，如果不在棋盘上返回 None"""
     x, y = pos
     if x < BOARD_LEFT or x >= BOARD_LEFT + COLS * CELL_SIZE:
         return None
@@ -60,7 +62,6 @@ def pos_to_cell(pos):
 
 
 def find_arrow_at(row, col):
-    """在指定格子里找还活着的箭头"""
     for arrow in LEVELS[current_level]:
         if arrow.alive and arrow.row == row and arrow.col == col:
             return arrow
@@ -128,8 +129,10 @@ def draw_playing_screen():
     for arrow in LEVELS[current_level]:
         if arrow.alive:
             cx, cy = cell_center(arrow.row, arrow.col)
-            # 如果这个箭头被选中，用高亮色画
-            if arrow is selected_arrow:
+            if arrow is hit_arrow and hit_timer > 0:
+                # 刚碰撞的箭头，画红色
+                draw_arrow(cx, cy, arrow.direction, ARROW_HIT)
+            elif arrow is selected_arrow:
                 draw_arrow(cx, cy, arrow.direction, ARROW_SELECTED)
             else:
                 draw_arrow(cx, cy, arrow.direction, ARROW_COLOR)
@@ -154,6 +157,8 @@ while running:
             if event.key == pygame.K_ESCAPE and state == STATE_PLAYING:
                 state = STATE_START
                 selected_arrow = None
+                hit_arrow = None
+                hit_timer = 0
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if state == STATE_START:
@@ -167,6 +172,14 @@ while running:
                     arrow = find_arrow_at(row, col)
                     if arrow:
                         selected_arrow = arrow
+                        # 关键：检查这个箭头能不能飞出去
+                        if can_fly_out(arrow, LEVELS[current_level]):
+                            arrow.alive = False
+                            selected_arrow = None
+                        else:
+                            # 被挡住了，闪红
+                            hit_arrow = arrow
+                            hit_timer = 20
                     else:
                         selected_arrow = None
 
@@ -176,6 +189,12 @@ while running:
         draw_playing_screen()
     elif state == STATE_RESULT:
         draw_result_screen()
+
+    # 碰撞红闪的倒计时
+    if hit_timer > 0:
+        hit_timer -= 1
+    else:
+        hit_arrow = None
 
     pygame.display.flip()
     clock.tick(60)

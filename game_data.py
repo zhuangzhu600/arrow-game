@@ -1,8 +1,8 @@
-# 方向常量，用 (dx, dy) 表示
-UP = (0, -1)
-DOWN = (0, 1)
-LEFT = (-1, 0)
-RIGHT = (1, 0)
+# 方向常量，用 (行变化, 列变化) 表示
+UP = (-1, 0)     # 行减1，列不变
+DOWN = (1, 0)    # 行加1，列不变
+LEFT = (0, -1)   # 行不变，列减1
+RIGHT = (0, 1)   # 行不变，列加1
 
 # 棋盘行列数
 ROWS = 5
@@ -14,24 +14,40 @@ MAX_MISTAKES = 3
 
 class Arrow:
     def __init__(self, row, col, direction):
-        self.row = row          # 第几行
-        self.col = col          # 第几列
-        self.direction = direction  # 方向
-        self.alive = True       # 是否还在棋盘上
+        self.row = row
+        self.col = col
+        self.direction = direction
+        self.alive = True
 
     def __repr__(self):
         return f"Arrow(row={self.row}, col={self.col}, dir={self.direction})"
 
 
-# 关卡数据：每个关卡是一个箭头列表
+def can_fly_out(arrow, level):
+    """
+    检查箭头前方是否没有阻挡。
+    沿箭头方向一格一格往外走，遇到还活着的箭头就返回 False，
+    走出棋盘都没遇到就返回 True。
+    """
+    dr, dc = arrow.direction
+    r = arrow.row + dr
+    c = arrow.col + dc
+    while 0 <= r < ROWS and 0 <= c < COLS:
+        for other in level:
+            if other.alive and other is not arrow and other.row == r and other.col == c:
+                return False
+        r += dr
+        c += dc
+    return True
+
+
+# 关卡数据
 LEVELS = [
-    # 第一关：3个箭头
     [
         Arrow(2, 2, RIGHT),
         Arrow(2, 0, RIGHT),
         Arrow(0, 0, DOWN),
     ],
-    # 第二关：5个箭头
     [
         Arrow(2, 2, RIGHT),
         Arrow(2, 0, RIGHT),
@@ -39,7 +55,6 @@ LEVELS = [
         Arrow(4, 0, UP),
         Arrow(0, 4, LEFT),
     ],
-    # 第三关：7个箭头
     [
         Arrow(2, 2, RIGHT),
         Arrow(2, 0, RIGHT),
