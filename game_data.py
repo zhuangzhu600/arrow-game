@@ -56,12 +56,10 @@ LEVELS = [
         Arrow(0, 4, LEFT),
     ],
     [
-        Arrow(2, 2, RIGHT),
-        Arrow(2, 0, RIGHT),
-        Arrow(0, 2, DOWN),
-        Arrow(4, 2, UP),
-        Arrow(2, 4, LEFT),
-        Arrow(0, 0, RIGHT),
-        Arrow(4, 4, LEFT),
+        Arrow(2, 4, RIGHT),  # 1. 最右侧，向右飞，无阻碍
+        Arrow(4, 0, RIGHT),  # 2. 最左下角，向右飞，无阻碍（独立）
+        Arrow(2, 2, RIGHT),  # 3. 中间，向右飞，被(2,4)挡，等它飞走
+        Arrow(2, 0, RIGHT),  # 4. 最左侧，向右飞，被(2,2)挡，等它飞走
+        Arrow(0, 2, DOWN),  # 5. 正上方，向下飞，被(2,2)挡，等它飞走
     ],
 ]
