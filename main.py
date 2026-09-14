@@ -19,8 +19,8 @@ GRID_COLOR = (200, 200, 200)
 ARROW_COLOR = (60, 90, 140)
 ARROW_SELECTED = (230, 120, 60)
 ARROW_HIT = (220, 60, 60)
-CELL_BG_COLOR = (225, 235, 245)   # 格子背景色（淡蓝色）
-ARROW_SHADOW = (200, 200, 200)    # 箭头阴影色
+CELL_BG_COLOR = (225, 235, 245)
+ARROW_SHADOW = (200, 200, 200)
 
 # 字体
 FONT_BIG = pygame.font.SysFont("simhei", 48)
@@ -53,11 +53,15 @@ flying_x = 0
 flying_y = 0
 flying_speed = 12
 
+# 新增：操作历史记录（撤销用）
+history = []
+
 # 按钮区域
 start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 350, 200, 60)
-restart_btn_rect = pygame.Rect(20, HEIGHT - 60, 120, 40)  # 游戏中的重新开始按钮
-result_restart_btn = pygame.Rect(WIDTH // 2 - 120, HEIGHT // 2 + 40, 100, 50)  # 结果界面的重开按钮
-result_next_btn = pygame.Rect(WIDTH // 2 + 20, HEIGHT // 2 + 40, 100, 50)  # 结果界面的下一关按钮
+restart_btn_rect = pygame.Rect(20, HEIGHT - 60, 120, 40)  # 重新开始
+undo_btn_rect = pygame.Rect(WIDTH - 140, HEIGHT - 60, 120, 40)  # 撤销
+result_restart_btn = pygame.Rect(WIDTH // 2 - 120, HEIGHT // 2 + 40, 100, 50)
+result_next_btn = pygame.Rect(WIDTH // 2 + 20, HEIGHT // 2 + 40, 100, 50)
 
 
 def cell_center(row, col):
@@ -85,7 +89,6 @@ def find_arrow_at(row, col):
 
 
 def draw_board():
-    # 不再画灰色线条，改成画一个个浅蓝色的圆角方块
     for r in range(ROWS):
         for c in range(COLS):
             x = BOARD_LEFT + c * CELL_SIZE
@@ -94,13 +97,10 @@ def draw_board():
             pygame.draw.rect(screen, CELL_BG_COLOR, rect, border_radius=10)
 
 
-
-
 def draw_arrow(cx, cy, direction, color):
-    size = 40  # 稍微缩小一点，看起来更精致
+    size = 40
 
     def get_pts(offset_x, offset_y):
-        """根据偏移量算出三角形三个顶点的坐标，统一处理阴影和本体"""
         if direction == RIGHT:
             return [(cx + size // 2 + offset_x, cy + offset_y),
                     (cx - size // 2 + offset_x, cy - size // 2 + offset_y),
@@ -119,12 +119,10 @@ def draw_arrow(cx, cy, direction, color):
                     (cx + size // 2 + offset_x, cy - size // 2 + offset_y)]
         return []
 
-    # 画阴影（向右下偏移 3 像素）
     shadow_pts = get_pts(3, 3)
     if shadow_pts:
         pygame.draw.polygon(screen, ARROW_SHADOW, shadow_pts)
 
-    # 画箭头本体
     pts = get_pts(0, 0)
     if pts:
         pygame.draw.polygon(screen, color, pts)
@@ -147,14 +145,13 @@ def draw_start_screen():
 def draw_playing_screen():
     screen.fill(BG_COLOR)
 
-    # 左上角：关卡信息 + 失误次数
+    # 左上角：关卡信息 + 失误次数 + 剩余箭头
     info = FONT_SMALL.render(f"第 {current_level + 1} 关", True, TEXT_COLOR)
     screen.blit(info, (20, 20))
 
     mistakes_text = FONT_SMALL.render(f"剩余失误: {mistakes_left}", True, TEXT_COLOR)
     screen.blit(mistakes_text, (20, 50))
 
-    # 计算剩余箭头数量
     arrows_left = 0
     for arrow in LEVELS[current_level]:
         if arrow.alive:
@@ -178,16 +175,27 @@ def draw_playing_screen():
                 else:
                     draw_arrow(cx, cy, arrow.direction, ARROW_COLOR)
 
-    # 画重新开始按钮
     mouse_pos = pygame.mouse.get_pos()
+
+    # 画重新开始按钮
     btn_color = BTN_HOVER if restart_btn_rect.collidepoint(mouse_pos) else BTN_COLOR
     pygame.draw.rect(screen, btn_color, restart_btn_rect, border_radius=5)
     restart_text = FONT_SMALL.render("重新开始", True, (255, 255, 255))
     screen.blit(restart_text, (restart_btn_rect.centerx - restart_text.get_width() // 2,
                                restart_btn_rect.centery - restart_text.get_height() // 2))
 
+    # 画撤销按钮
+    undo_color = BTN_HOVER if undo_btn_rect.collidepoint(mouse_pos) else BTN_COLOR
+    # 如果正在飞或者没历史记录，撤销按钮画灰一点
+    if flying_arrow is not None or not history:
+        undo_color = (180, 180, 180)
+    pygame.draw.rect(screen, undo_color, undo_btn_rect, border_radius=5)
+    undo_text = FONT_SMALL.render("撤销", True, (255, 255, 255))
+    screen.blit(undo_text, (undo_btn_rect.centerx - undo_text.get_width() // 2,
+                            undo_btn_rect.centery - undo_text.get_height() // 2))
+
     back = FONT_SMALL.render("按 ESC 返回开始界面", True, (120, 120, 120))
-    screen.blit(back, (WIDTH // 2 - back.get_width() // 2, HEIGHT - 40))
+    screen.blit(back, (WIDTH // 2 - back.get_width() // 2, HEIGHT - 20))
 
 
 def draw_result_screen():
@@ -197,14 +205,12 @@ def draw_result_screen():
 
     mouse_pos = pygame.mouse.get_pos()
 
-    # 画重开按钮
     color = BTN_HOVER if result_restart_btn.collidepoint(mouse_pos) else BTN_COLOR
     pygame.draw.rect(screen, color, result_restart_btn, border_radius=10)
     restart_text = FONT_SMALL.render("重新开始", True, (255, 255, 255))
     screen.blit(restart_text, (result_restart_btn.centerx - restart_text.get_width() // 2,
                                result_restart_btn.centery - restart_text.get_height() // 2))
 
-    # 如果通关了，才画“下一关”按钮
     if result_message == "通关！":
         color = BTN_HOVER if result_next_btn.collidepoint(mouse_pos) else BTN_COLOR
         pygame.draw.rect(screen, color, result_next_btn, border_radius=10)
@@ -214,13 +220,13 @@ def draw_result_screen():
 
 
 def reset_level():
-    """把当前关卡恢复到初始状态"""
-    global mistakes_left, selected_arrow, hit_arrow, hit_timer, flying_arrow
+    global mistakes_left, selected_arrow, hit_arrow, hit_timer, flying_arrow, history
     mistakes_left = MAX_MISTAKES
     selected_arrow = None
     hit_arrow = None
     hit_timer = 0
     flying_arrow = None
+    history = []  # 清空历史记录
     for arrow in LEVELS[current_level]:
         arrow.alive = True
 
@@ -239,6 +245,7 @@ while running:
                     hit_arrow = None
                     hit_timer = 0
                     flying_arrow = None
+                    history = []
                 elif state == STATE_RESULT:
                     state = STATE_START
                     current_level = 0
@@ -255,6 +262,14 @@ while running:
                 # 先判断是否点了重新开始
                 if restart_btn_rect.collidepoint(event.pos):
                     reset_level()
+                # 判断是否点了撤销
+                elif undo_btn_rect.collidepoint(event.pos):
+                    if flying_arrow is None and history:
+                        action_type, arrow = history.pop()
+                        if action_type == 'fly':
+                            arrow.alive = True
+                        elif action_type == 'hit':
+                            mistakes_left += 1
                 elif flying_arrow is None:
                     cell = pos_to_cell(event.pos)
                     if cell:
@@ -266,10 +281,14 @@ while running:
                                 flying_arrow = arrow
                                 flying_x, flying_y = cell_center(arrow.row, arrow.col)
                                 selected_arrow = None
+                                # 记录历史：飞出的箭头
+                                history.append(('fly', arrow))
                             else:
                                 hit_arrow = arrow
                                 hit_timer = 20
                                 mistakes_left -= 1
+                                # 记录历史：点错了
+                                history.append(('hit', None))
                                 if mistakes_left <= 0:
                                     state = STATE_RESULT
                                     result_message = "游戏失败！"
@@ -284,7 +303,7 @@ while running:
                 elif result_message == "通关！" and result_next_btn.collidepoint(event.pos):
                     current_level += 1
                     if current_level >= len(LEVELS):
-                        current_level = 0  # 最后一关通关后，回到第一关
+                        current_level = 0
                     reset_level()
                     state = STATE_PLAYING
 
@@ -300,7 +319,6 @@ while running:
             flying_arrow.alive = False
             flying_arrow = None
 
-    # 检查是否通关（所有箭头都不在棋盘上，并且没有正在飞的箭头）
     if state == STATE_PLAYING:
         all_dead = True
         for arrow in LEVELS[current_level]:
