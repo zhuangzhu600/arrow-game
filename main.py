@@ -142,6 +142,15 @@ def draw_playing_screen():
     mistakes_text = FONT_SMALL.render(f"剩余失误: {mistakes_left}", True, TEXT_COLOR)
     screen.blit(mistakes_text, (20, 50))
 
+    # 计算剩余箭头数量
+    arrows_left = 0
+    for arrow in LEVELS[current_level]:
+        if arrow.alive:
+            arrows_left += 1
+
+    arrows_text = FONT_SMALL.render(f"剩余箭头: {arrows_left}", True, TEXT_COLOR)
+    screen.blit(arrows_text, (20, 80))
+
     draw_board()
 
     for arrow in LEVELS[current_level]:
