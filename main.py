@@ -18,7 +18,7 @@ BTN_HOVER = (70, 130, 200)
 GRID_COLOR = (200, 200, 200)
 ARROW_COLOR = (60, 90, 140)
 ARROW_SELECTED = (230, 120, 60)
-ARROW_HIT = (220, 60, 60)   # 碰撞反馈用的红色
+ARROW_HIT = (220, 60, 60)
 
 # 字体
 FONT_BIG = pygame.font.SysFont("simhei", 48)
@@ -38,8 +38,14 @@ state = STATE_START
 
 current_level = 0
 selected_arrow = None
-hit_arrow = None       # 刚碰撞的箭头，用来闪红
-hit_timer = 0          # 红色还要闪多少帧
+hit_arrow = None
+hit_timer = 0
+
+# 新增：飞行中的箭头状态
+flying_arrow = None       # 正在飞出的箭头对象
+flying_x = 0              # 飞行时的当前 x 坐标
+flying_y = 0              # 飞行时的当前 y 坐标
+flying_speed = 12         # 每帧移动的像素数
 
 start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 350, 200, 60)
 
@@ -128,14 +134,17 @@ def draw_playing_screen():
 
     for arrow in LEVELS[current_level]:
         if arrow.alive:
-            cx, cy = cell_center(arrow.row, arrow.col)
-            if arrow is hit_arrow and hit_timer > 0:
-                # 刚碰撞的箭头，画红色
-                draw_arrow(cx, cy, arrow.direction, ARROW_HIT)
-            elif arrow is selected_arrow:
-                draw_arrow(cx, cy, arrow.direction, ARROW_SELECTED)
+            if arrow is flying_arrow:
+                # 正在飞行的箭头，画在动画坐标上
+                draw_arrow(flying_x, flying_y, arrow.direction, ARROW_COLOR)
             else:
-                draw_arrow(cx, cy, arrow.direction, ARROW_COLOR)
+                cx, cy = cell_center(arrow.row, arrow.col)
+                if arrow is hit_arrow and hit_timer > 0:
+                    draw_arrow(cx, cy, arrow.direction, ARROW_HIT)
+                elif arrow is selected_arrow:
+                    draw_arrow(cx, cy, arrow.direction, ARROW_SELECTED)
+                else:
+                    draw_arrow(cx, cy, arrow.direction, ARROW_COLOR)
 
     back = FONT_SMALL.render("按 ESC 返回开始界面", True, (120, 120, 120))
     screen.blit(back, (WIDTH // 2 - back.get_width() // 2, HEIGHT - 40))
@@ -159,6 +168,7 @@ while running:
                 selected_arrow = None
                 hit_arrow = None
                 hit_timer = 0
+                flying_arrow = None
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if state == STATE_START:
@@ -166,22 +176,39 @@ while running:
                     state = STATE_PLAYING
 
             elif state == STATE_PLAYING:
-                cell = pos_to_cell(event.pos)
-                if cell:
-                    row, col = cell
-                    arrow = find_arrow_at(row, col)
-                    if arrow:
-                        selected_arrow = arrow
-                        # 关键：检查这个箭头能不能飞出去
-                        if can_fly_out(arrow, LEVELS[current_level]):
-                            arrow.alive = False
-                            selected_arrow = None
+                # 如果有箭头正在飞，暂时不让点别的，等它飞完
+                if flying_arrow is None:
+                    cell = pos_to_cell(event.pos)
+                    if cell:
+                        row, col = cell
+                        arrow = find_arrow_at(row, col)
+                        if arrow:
+                            selected_arrow = arrow
+                            if can_fly_out(arrow, LEVELS[current_level]):
+                                # 可以飞出：进入飞行状态
+                                flying_arrow = arrow
+                                flying_x, flying_y = cell_center(arrow.row, arrow.col)
+                                selected_arrow = None
+                            else:
+                                # 被挡住，闪红
+                                hit_arrow = arrow
+                                hit_timer = 20
                         else:
-                            # 被挡住了，闪红
-                            hit_arrow = arrow
-                            hit_timer = 20
-                    else:
-                        selected_arrow = None
+                            selected_arrow = None
+
+    # 更新飞行箭头的位置
+    if flying_arrow is not None:
+        dr, dc = flying_arrow.direction
+        flying_x += dc * flying_speed
+        flying_y += dr * flying_speed
+
+        # 检查是否已经飞出棋盘很远，如果飞出去了，就真正移除
+        if (flying_x < BOARD_LEFT - CELL_SIZE or
+            flying_x > BOARD_LEFT + COLS * CELL_SIZE + CELL_SIZE or
+            flying_y < BOARD_TOP - CELL_SIZE or
+            flying_y > BOARD_TOP + ROWS * CELL_SIZE + CELL_SIZE):
+            flying_arrow.alive = False
+            flying_arrow = None
 
     if state == STATE_START:
         draw_start_screen()
@@ -190,7 +217,6 @@ while running:
     elif state == STATE_RESULT:
         draw_result_screen()
 
-    # 碰撞红闪的倒计时
     if hit_timer > 0:
         hit_timer -= 1
     else:
