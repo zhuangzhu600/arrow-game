@@ -19,6 +19,8 @@ TEXT_COLOR = (50, 50, 50)
 BTN_COLOR = (100, 160, 220)
 BTN_HOVER = (70, 130, 200)
 BTN_LOCKED = (190, 190, 190)
+BTN_DANGER = (220, 80, 80)
+BTN_DANGER_HOVER = (200, 50, 50)
 ARROW_COLOR = (60, 90, 140)
 ARROW_SELECTED = (230, 120, 60)
 ARROW_HIT = (220, 60, 60)
@@ -31,8 +33,7 @@ FONT_MID = pygame.font.SysFont("simhei", 28)
 FONT_SMALL = pygame.font.SysFont("simhei", 22)
 FONT_TINY = pygame.font.SysFont("simhei", 18)
 
-# 5 个关卡的难度配置
-# (行, 列, 最少箭头, 最多箭头)
+# 5 个关卡的难度配置：(行, 列, 最少箭头, 最多箭头)
 LEVEL_CONFIGS = [
     (5, 5, 6, 8),
     (6, 6, 9, 12),
@@ -67,6 +68,17 @@ def load_save():
 def write_save(data):
     with open(SAVE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def do_reset_save():
+    """清空所有存档记录"""
+    global save_data
+    save_data = {
+        "unlocked_level": 1,
+        "stars": [0, 0, 0, 0, 0],
+        "best_times": [0.0, 0.0, 0.0, 0.0, 0.0],
+    }
+    write_save(save_data)
 
 
 save_data = load_save()
@@ -105,11 +117,19 @@ stars_earned = 0
 
 history = []
 
+# 重置确认状态
+reset_confirm = False
+
 # 按钮区域
 start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 500, 200, 60)
 restart_btn_rect = pygame.Rect(20, HEIGHT - 60, 120, 40)
 undo_btn_rect = pygame.Rect(WIDTH - 140, HEIGHT - 60, 120, 40)
-back_btn_rect = pygame.Rect(WIDTH // 2 - 80, HEIGHT - 100, 160, 50)
+back_btn_rect = pygame.Rect(WIDTH // 2 - 180, HEIGHT - 100, 160, 50)
+reset_btn_rect = pygame.Rect(WIDTH // 2 + 20, HEIGHT - 100, 160, 50)
+
+# 重置确认弹窗的按钮
+confirm_yes_rect = pygame.Rect(WIDTH // 2 - 110, HEIGHT // 2 + 20, 100, 50)
+confirm_no_rect = pygame.Rect(WIDTH // 2 + 10, HEIGHT // 2 + 20, 100, 50)
 
 level_btn_rects = []
 for i in range(5):
@@ -118,7 +138,6 @@ for i in range(5):
 
 
 def get_result_buttons():
-    """根据当前结果状态，动态返回居中排列的按钮列表"""
     if result_message == "游戏失败！":
         buttons = [("重新开始", "restart"), ("返回选关", "level_select"), ("返回主界面", "main_menu")]
     elif result_message == "通关！":
@@ -157,7 +176,6 @@ def load_level(level_index):
     ROWS = rows
     COLS = cols
     update_board_layout()
-    # 箭头数量在区间内随机，盘面真随机（不传 seed）
     num_arrows = random.randint(min_arrows, max_arrows)
     level_arrows = generate_random_level(ROWS, COLS, num_arrows)
     current_level = level_index
@@ -284,11 +302,48 @@ def draw_level_select_screen():
             lock_text = FONT_SMALL.render("未解锁", True, (255, 255, 255))
             screen.blit(lock_text, (rect.right - lock_text.get_width() - 20, rect.y + 32))
 
+    # 返回按钮
     color = BTN_HOVER if back_btn_rect.collidepoint(mouse_pos) else BTN_COLOR
     pygame.draw.rect(screen, color, back_btn_rect, border_radius=10)
     back_text = FONT_MID.render("返回", True, (255, 255, 255))
     screen.blit(back_text, (back_btn_rect.centerx - back_text.get_width() // 2,
                             back_btn_rect.centery - back_text.get_height() // 2))
+
+    # 重置记录按钮（危险色）
+    color = BTN_DANGER_HOVER if reset_btn_rect.collidepoint(mouse_pos) else BTN_DANGER
+    pygame.draw.rect(screen, color, reset_btn_rect, border_radius=10)
+    reset_text = FONT_MID.render("重置记录", True, (255, 255, 255))
+    screen.blit(reset_text, (reset_btn_rect.centerx - reset_text.get_width() // 2,
+                             reset_btn_rect.centery - reset_text.get_height() // 2))
+
+    # 重置确认弹窗
+    if reset_confirm:
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+
+        dialog = pygame.Rect(WIDTH // 2 - 220, HEIGHT // 2 - 110, 440, 220)
+        pygame.draw.rect(screen, (255, 255, 255), dialog, border_radius=15)
+
+        msg = FONT_MID.render("确定要重置所有记录吗？", True, TEXT_COLOR)
+        screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 70))
+
+        tip = FONT_TINY.render("解锁进度、星级和最快时间都将清零", True, (150, 150, 150))
+        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 30))
+
+        # 确定按钮（危险色）
+        color = BTN_DANGER_HOVER if confirm_yes_rect.collidepoint(mouse_pos) else BTN_DANGER
+        pygame.draw.rect(screen, color, confirm_yes_rect, border_radius=8)
+        yes_text = FONT_SMALL.render("确定", True, (255, 255, 255))
+        screen.blit(yes_text, (confirm_yes_rect.centerx - yes_text.get_width() // 2,
+                               confirm_yes_rect.centery - yes_text.get_height() // 2))
+
+        # 取消按钮
+        color = BTN_HOVER if confirm_no_rect.collidepoint(mouse_pos) else BTN_COLOR
+        pygame.draw.rect(screen, color, confirm_no_rect, border_radius=8)
+        no_text = FONT_SMALL.render("取消", True, (255, 255, 255))
+        screen.blit(no_text, (confirm_no_rect.centerx - no_text.get_width() // 2,
+                              confirm_no_rect.centery - no_text.get_height() // 2))
 
 
 def draw_playing_screen():
@@ -361,7 +416,6 @@ def draw_result_screen():
         tip = FONT_MID.render("游戏失败！", True, TEXT_COLOR)
         screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 100))
 
-    # 动态绘制居中排列的按钮
     mouse_pos = pygame.mouse.get_pos()
     for rect, label, action in get_result_buttons():
         color = BTN_HOVER if rect.collidepoint(mouse_pos) else BTN_COLOR
@@ -412,7 +466,10 @@ while running:
                     flying_arrow = None
                     history = []
                 elif state == STATE_LEVEL_SELECT:
-                    state = STATE_START
+                    if reset_confirm:
+                        reset_confirm = False
+                    else:
+                        state = STATE_START
                 elif state == STATE_RESULT:
                     state = STATE_LEVEL_SELECT
                     reset_level()
@@ -423,16 +480,26 @@ while running:
                     state = STATE_LEVEL_SELECT
 
             elif state == STATE_LEVEL_SELECT:
-                if back_btn_rect.collidepoint(event.pos):
-                    state = STATE_START
+                if reset_confirm:
+                    # 弹窗打开时，只响应确定/取消
+                    if confirm_yes_rect.collidepoint(event.pos):
+                        do_reset_save()
+                        reset_confirm = False
+                    elif confirm_no_rect.collidepoint(event.pos):
+                        reset_confirm = False
                 else:
-                    for i in range(5):
-                        if level_btn_rects[i].collidepoint(event.pos):
-                            if (i + 1) <= save_data["unlocked_level"]:
-                                load_level(i)
-                                reset_level()
-                                state = STATE_PLAYING
-                            break
+                    if back_btn_rect.collidepoint(event.pos):
+                        state = STATE_START
+                    elif reset_btn_rect.collidepoint(event.pos):
+                        reset_confirm = True
+                    else:
+                        for i in range(5):
+                            if level_btn_rects[i].collidepoint(event.pos):
+                                if (i + 1) <= save_data["unlocked_level"]:
+                                    load_level(i)
+                                    reset_level()
+                                    state = STATE_PLAYING
+                                break
 
             elif state == STATE_PLAYING:
                 if restart_btn_rect.collidepoint(event.pos):
