@@ -1,6 +1,9 @@
 import pygame
 import sys
-import game_data
+import json
+import os
+import random
+
 from game_data import *
 
 pygame.init()
@@ -15,7 +18,7 @@ BG_COLOR = (240, 240, 240)
 TEXT_COLOR = (50, 50, 50)
 BTN_COLOR = (100, 160, 220)
 BTN_HOVER = (70, 130, 200)
-GRID_COLOR = (200, 200, 200)
+BTN_LOCKED = (190, 190, 190)
 ARROW_COLOR = (60, 90, 140)
 ARROW_SELECTED = (230, 120, 60)
 ARROW_HIT = (220, 60, 60)
@@ -26,17 +29,49 @@ ARROW_SHADOW = (200, 200, 200)
 FONT_BIG = pygame.font.SysFont("simhei", 48)
 FONT_MID = pygame.font.SysFont("simhei", 28)
 FONT_SMALL = pygame.font.SysFont("simhei", 22)
+FONT_TINY = pygame.font.SysFont("simhei", 18)
 
-# 5 个关卡的难度配置：(行, 列, 箭头数量)
+# 5 个关卡的难度配置
+# (行, 列, 最少箭头, 最多箭头)
 LEVEL_CONFIGS = [
-    (5, 5, 7),    # 第 1 关
-    (6, 6, 10),   # 第 2 关
-    (7, 7, 14),   # 第 3 关
-    (8, 8, 18),   # 第 4 关
-    (9, 9, 22),   # 第 5 关
+    (5, 5, 6, 8),
+    (6, 6, 9, 12),
+    (7, 7, 13, 16),
+    (8, 8, 17, 21),
+    (9, 9, 21, 26),
 ]
 
-# 动态棋盘参数（这些会在切换关卡时被重新计算）
+# 存档文件
+SAVE_FILE = "save.json"
+
+
+def load_save():
+    default = {
+        "unlocked_level": 1,
+        "stars": [0, 0, 0, 0, 0],
+        "best_times": [0.0, 0.0, 0.0, 0.0, 0.0],
+    }
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for key in default:
+                    if key not in data:
+                        data[key] = default[key]
+                return data
+        except Exception:
+            pass
+    return default
+
+
+def write_save(data):
+    with open(SAVE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+save_data = load_save()
+
+# 动态棋盘参数
 ROWS = 5
 COLS = 5
 CELL_SIZE = 90
@@ -45,12 +80,13 @@ BOARD_TOP = 0
 
 # 游戏状态
 STATE_START = "start"
+STATE_LEVEL_SELECT = "level_select"
 STATE_PLAYING = "playing"
 STATE_RESULT = "result"
 state = STATE_START
 
 current_level = 0
-level_arrows = []  # 当前关卡的箭头列表
+level_arrows = []
 
 selected_arrow = None
 hit_arrow = None
@@ -70,15 +106,44 @@ stars_earned = 0
 history = []
 
 # 按钮区域
-start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 450, 200, 60)
+start_btn_rect = pygame.Rect(WIDTH // 2 - 100, 500, 200, 60)
 restart_btn_rect = pygame.Rect(20, HEIGHT - 60, 120, 40)
 undo_btn_rect = pygame.Rect(WIDTH - 140, HEIGHT - 60, 120, 40)
-result_restart_btn = pygame.Rect(WIDTH // 2 - 120, HEIGHT // 2 + 40, 100, 50)
-result_next_btn = pygame.Rect(WIDTH // 2 + 20, HEIGHT // 2 + 40, 100, 50)
+back_btn_rect = pygame.Rect(WIDTH // 2 - 80, HEIGHT - 100, 160, 50)
+
+level_btn_rects = []
+for i in range(5):
+    y = 140 + i * 105
+    level_btn_rects.append(pygame.Rect(WIDTH // 2 - 220, y, 440, 90))
+
+
+def get_result_buttons():
+    """根据当前结果状态，动态返回居中排列的按钮列表"""
+    if result_message == "游戏失败！":
+        buttons = [("重新开始", "restart"), ("返回选关", "level_select"), ("返回主界面", "main_menu")]
+    elif result_message == "通关！":
+        buttons = [("重新开始", "restart"), ("下一关", "next"),
+                   ("返回选关", "level_select"), ("返回主界面", "main_menu")]
+    elif result_message == "恭喜完全通关！":
+        buttons = [("重新开始", "restart"), ("返回选关", "level_select"), ("返回主界面", "main_menu")]
+    else:
+        buttons = [("重新开始", "restart")]
+
+    btn_w = 150
+    btn_h = 50
+    gap = 20
+    total_w = len(buttons) * btn_w + (len(buttons) - 1) * gap
+    start_x = (WIDTH - total_w) // 2
+    btn_y = HEIGHT // 2 + 60
+
+    result = []
+    for i, (label, action) in enumerate(buttons):
+        rect = pygame.Rect(start_x + i * (btn_w + gap), btn_y, btn_w, btn_h)
+        result.append((rect, label, action))
+    return result
 
 
 def update_board_layout():
-    """根据当前的行列数，重新计算格子和棋盘位置，确保棋盘居中且不超出窗口"""
     global CELL_SIZE, BOARD_LEFT, BOARD_TOP
     max_board_size = 600
     CELL_SIZE = min(max_board_size // COLS, max_board_size // ROWS)
@@ -87,12 +152,13 @@ def update_board_layout():
 
 
 def load_level(level_index):
-    """加载指定关卡，生成随机棋盘"""
     global ROWS, COLS, level_arrows, current_level
-    rows, cols, num_arrows = LEVEL_CONFIGS[level_index]
+    rows, cols, min_arrows, max_arrows = LEVEL_CONFIGS[level_index]
     ROWS = rows
     COLS = cols
     update_board_layout()
+    # 箭头数量在区间内随机，盘面真随机（不传 seed）
+    num_arrows = random.randint(min_arrows, max_arrows)
     level_arrows = generate_random_level(ROWS, COLS, num_arrows)
     current_level = level_index
 
@@ -131,7 +197,7 @@ def draw_board():
 
 
 def draw_arrow(cx, cy, direction, color):
-    size = int(CELL_SIZE * 0.5)  # 根据格子大小动态缩放箭头
+    size = int(CELL_SIZE * 0.5)
 
     def get_pts(offset_x, offset_y):
         if direction == RIGHT:
@@ -167,7 +233,7 @@ def draw_start_screen():
     screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 250))
 
     subtitle = FONT_SMALL.render("随机生成关卡 · 难度逐级提升", True, (120, 120, 120))
-    screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, 330))
+    screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, 340))
 
     mouse_pos = pygame.mouse.get_pos()
     color = BTN_HOVER if start_btn_rect.collidepoint(mouse_pos) else BTN_COLOR
@@ -176,6 +242,53 @@ def draw_start_screen():
     btn_text = FONT_MID.render("开始游戏", True, (255, 255, 255))
     screen.blit(btn_text, (start_btn_rect.centerx - btn_text.get_width() // 2,
                            start_btn_rect.centery - btn_text.get_height() // 2))
+
+
+def draw_level_select_screen():
+    screen.fill(BG_COLOR)
+
+    title = FONT_BIG.render("选择关卡", True, TEXT_COLOR)
+    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 40))
+
+    mouse_pos = pygame.mouse.get_pos()
+    for i in range(5):
+        rect = level_btn_rects[i]
+        unlocked = (i + 1) <= save_data["unlocked_level"]
+
+        if not unlocked:
+            color = BTN_LOCKED
+        elif rect.collidepoint(mouse_pos):
+            color = BTN_HOVER
+        else:
+            color = BTN_COLOR
+
+        pygame.draw.rect(screen, color, rect, border_radius=10)
+
+        level_text = FONT_MID.render(f"第 {i + 1} 关", True, (255, 255, 255))
+        screen.blit(level_text, (rect.x + 20, rect.y + 10))
+
+        if unlocked:
+            stars = save_data["stars"][i]
+            star_str = "★" * stars + "☆" * (3 - stars)
+            star_text = FONT_SMALL.render(star_str, True, (255, 230, 100))
+            screen.blit(star_text, (rect.x + 20, rect.y + 52))
+
+            bt = save_data["best_times"][i]
+            if bt > 0:
+                time_str = f"最快: {bt:.1f} 秒"
+            else:
+                time_str = "最快: --"
+            time_text = FONT_TINY.render(time_str, True, (255, 255, 255))
+            screen.blit(time_text, (rect.right - time_text.get_width() - 20, rect.y + 58))
+        else:
+            lock_text = FONT_SMALL.render("未解锁", True, (255, 255, 255))
+            screen.blit(lock_text, (rect.right - lock_text.get_width() - 20, rect.y + 32))
+
+    color = BTN_HOVER if back_btn_rect.collidepoint(mouse_pos) else BTN_COLOR
+    pygame.draw.rect(screen, color, back_btn_rect, border_radius=10)
+    back_text = FONT_MID.render("返回", True, (255, 255, 255))
+    screen.blit(back_text, (back_btn_rect.centerx - back_text.get_width() // 2,
+                            back_btn_rect.centery - back_text.get_height() // 2))
 
 
 def draw_playing_screen():
@@ -225,7 +338,7 @@ def draw_playing_screen():
     screen.blit(undo_text, (undo_btn_rect.centerx - undo_text.get_width() // 2,
                             undo_btn_rect.centery - undo_text.get_height() // 2))
 
-    back = FONT_SMALL.render("按 ESC 返回开始界面", True, (120, 120, 120))
+    back = FONT_SMALL.render("按 ESC 返回选关", True, (120, 120, 120))
     screen.blit(back, (WIDTH // 2 - back.get_width() // 2, HEIGHT - 20))
 
 
@@ -234,34 +347,28 @@ def draw_result_screen():
 
     if result_message == "通关！":
         tip = FONT_MID.render(f"通关！用时 {elapsed_time:.1f} 秒", True, TEXT_COLOR)
-        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 100))
+        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 120))
 
         star_str = "★" * stars_earned + "☆" * (3 - stars_earned)
         star_text = FONT_BIG.render(star_str, True, (240, 180, 50))
-        screen.blit(star_text, (WIDTH // 2 - star_text.get_width() // 2, HEIGHT // 2 - 50))
+        screen.blit(star_text, (WIDTH // 2 - star_text.get_width() // 2, HEIGHT // 2 - 70))
     elif result_message == "恭喜完全通关！":
         tip = FONT_MID.render("恭喜完全通关！", True, (240, 180, 50))
-        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 80))
+        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 120))
         tip2 = FONT_SMALL.render("你已经征服了全部 5 个关卡！", True, TEXT_COLOR)
-        screen.blit(tip2, (WIDTH // 2 - tip2.get_width() // 2, HEIGHT // 2 - 30))
+        screen.blit(tip2, (WIDTH // 2 - tip2.get_width() // 2, HEIGHT // 2 - 70))
     else:
         tip = FONT_MID.render("游戏失败！", True, TEXT_COLOR)
-        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 60))
+        screen.blit(tip, (WIDTH // 2 - tip.get_width() // 2, HEIGHT // 2 - 100))
 
+    # 动态绘制居中排列的按钮
     mouse_pos = pygame.mouse.get_pos()
-
-    color = BTN_HOVER if result_restart_btn.collidepoint(mouse_pos) else BTN_COLOR
-    pygame.draw.rect(screen, color, result_restart_btn, border_radius=10)
-    restart_text = FONT_SMALL.render("重新开始", True, (255, 255, 255))
-    screen.blit(restart_text, (result_restart_btn.centerx - restart_text.get_width() // 2,
-                               result_restart_btn.centery - restart_text.get_height() // 2))
-
-    if result_message == "通关！" and current_level < len(LEVEL_CONFIGS) - 1:
-        color = BTN_HOVER if result_next_btn.collidepoint(mouse_pos) else BTN_COLOR
-        pygame.draw.rect(screen, color, result_next_btn, border_radius=10)
-        next_text = FONT_SMALL.render("下一关", True, (255, 255, 255))
-        screen.blit(next_text, (result_next_btn.centerx - next_text.get_width() // 2,
-                                result_next_btn.centery - next_text.get_height() // 2))
+    for rect, label, action in get_result_buttons():
+        color = BTN_HOVER if rect.collidepoint(mouse_pos) else BTN_COLOR
+        pygame.draw.rect(screen, color, rect, border_radius=10)
+        text = FONT_SMALL.render(label, True, (255, 255, 255))
+        screen.blit(text, (rect.centerx - text.get_width() // 2,
+                           rect.centery - text.get_height() // 2))
 
 
 def calculate_stars(time_used, mistakes_used):
@@ -298,22 +405,34 @@ while running:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 if state == STATE_PLAYING:
-                    state = STATE_START
+                    state = STATE_LEVEL_SELECT
                     selected_arrow = None
                     hit_arrow = None
                     hit_timer = 0
                     flying_arrow = None
                     history = []
-                elif state == STATE_RESULT:
+                elif state == STATE_LEVEL_SELECT:
                     state = STATE_START
+                elif state == STATE_RESULT:
+                    state = STATE_LEVEL_SELECT
                     reset_level()
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if state == STATE_START:
                 if start_btn_rect.collidepoint(event.pos):
-                    load_level(0)
-                    state = STATE_PLAYING
-                    reset_level()
+                    state = STATE_LEVEL_SELECT
+
+            elif state == STATE_LEVEL_SELECT:
+                if back_btn_rect.collidepoint(event.pos):
+                    state = STATE_START
+                else:
+                    for i in range(5):
+                        if level_btn_rects[i].collidepoint(event.pos):
+                            if (i + 1) <= save_data["unlocked_level"]:
+                                load_level(i)
+                                reset_level()
+                                state = STATE_PLAYING
+                            break
 
             elif state == STATE_PLAYING:
                 if restart_btn_rect.collidepoint(event.pos):
@@ -350,14 +469,23 @@ while running:
                             selected_arrow = None
 
             elif state == STATE_RESULT:
-                if result_restart_btn.collidepoint(event.pos):
-                    reset_level()
-                    state = STATE_PLAYING
-                elif result_message == "通关！" and current_level < len(LEVEL_CONFIGS) - 1:
-                    if result_next_btn.collidepoint(event.pos):
-                        load_level(current_level + 1)
-                        reset_level()
-                        state = STATE_PLAYING
+                for rect, label, action in get_result_buttons():
+                    if rect.collidepoint(event.pos):
+                        if action == "restart":
+                            reset_level()
+                            state = STATE_PLAYING
+                        elif action == "next":
+                            if current_level + 1 < len(LEVEL_CONFIGS):
+                                load_level(current_level + 1)
+                                reset_level()
+                                state = STATE_PLAYING
+                        elif action == "level_select":
+                            reset_level()
+                            state = STATE_LEVEL_SELECT
+                        elif action == "main_menu":
+                            reset_level()
+                            state = STATE_START
+                        break
 
     if state == STATE_PLAYING:
         elapsed_time = (pygame.time.get_ticks() - level_start_time) / 1000.0
@@ -384,6 +512,17 @@ while running:
             state = STATE_RESULT
             used_mistakes = MAX_MISTAKES - mistakes_left
             stars_earned = calculate_stars(elapsed_time, used_mistakes)
+
+            if stars_earned > save_data["stars"][current_level]:
+                save_data["stars"][current_level] = stars_earned
+            bt = save_data["best_times"][current_level]
+            if bt == 0 or elapsed_time < bt:
+                save_data["best_times"][current_level] = elapsed_time
+            if current_level + 1 < len(LEVEL_CONFIGS):
+                if save_data["unlocked_level"] < current_level + 2:
+                    save_data["unlocked_level"] = current_level + 2
+            write_save(save_data)
+
             if current_level >= len(LEVEL_CONFIGS) - 1:
                 result_message = "恭喜完全通关！"
             else:
@@ -391,6 +530,8 @@ while running:
 
     if state == STATE_START:
         draw_start_screen()
+    elif state == STATE_LEVEL_SELECT:
+        draw_level_select_screen()
     elif state == STATE_PLAYING:
         draw_playing_screen()
     elif state == STATE_RESULT:
