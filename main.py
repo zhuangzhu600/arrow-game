@@ -13,6 +13,7 @@ screen = pygame.display.set_mode((config.WIDTH, config.HEIGHT))
 pygame.display.set_caption("一箭又一箭")
 clock = pygame.time.Clock()
 config.init_fonts()
+ui.load_backgrounds()
 
 state.save_data = load_save()
 
