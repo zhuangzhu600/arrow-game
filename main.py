@@ -5,7 +5,7 @@ import random
 from src import config
 from src import state
 from src import ui
-from src.game_data import can_fly_out, generate_random_level
+from src.game_data import can_fly_out, generate_random_level, calculate_stars
 from src.save_system import load_save, write_save, get_default_save
 
 pygame.init()
@@ -80,14 +80,6 @@ def reset_level():
     for arrow in state.level_arrows:
         arrow.alive = True
 
-
-def calculate_stars(time_used, mistakes_used):
-    if time_used <= 20 and mistakes_used == 0:
-        return 3
-    elif time_used <= 40 and mistakes_used <= 1:
-        return 2
-    else:
-        return 1
 
 
 running = True

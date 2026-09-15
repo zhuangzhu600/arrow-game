@@ -76,3 +76,11 @@ def generate_random_level(rows, cols, num_arrows, seed=None):
         arrows.append(arrow)
 
     return arrows
+
+def calculate_stars(time_used, mistakes_used):
+        if time_used <= 20 and mistakes_used == 0:
+            return 3
+        elif time_used <= 40 and mistakes_used <= 1:
+            return 2
+        else:
+            return 1
