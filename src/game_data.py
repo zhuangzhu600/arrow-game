@@ -5,8 +5,6 @@ DOWN = (1, 0)
 LEFT = (0, -1)
 RIGHT = (0, 1)
 
-MAX_MISTAKES = 3
-
 
 class Arrow:
     def __init__(self, row, col, direction):
@@ -30,7 +28,6 @@ def can_fly_out(arrow, level, rows, cols):
 
 
 def generate_random_level(rows, cols, num_arrows, seed=None):
-    """逆向生成保证有解的关卡。seed 用于固定盘面。"""
     if seed is not None:
         random.seed(seed)
 
